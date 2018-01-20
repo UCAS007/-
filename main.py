@@ -5,9 +5,24 @@ import sys
 import pickle
 import os
 import a
+import visualize
 
 MIN_MATCH_COUNT = 10
-
+class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
+               'bus', 'train', 'truck', 'boat', 'traffic light',
+               'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird',
+               'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear',
+               'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie',
+               'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+               'kite', 'baseball bat', 'baseball glove', 'skateboard',
+               'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup',
+               'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+               'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
+               'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed',
+               'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote',
+               'keyboard', 'cell phone', 'microwave', 'oven', 'toaster',
+               'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors',
+               'teddy bear', 'hair drier', 'toothbrush']
 
 def load_pickle(filename):
     with open(filename, 'rb') as save_f:
@@ -35,7 +50,7 @@ def orb_match(img1, img2):
     return kp1, kp2, matches
 
 
-def keypoint_filter(images_path, images_pickle):
+def keypoint_bbox_filter(images_path, images_pickle):
     images = []
     for image_path in images_path:
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -90,6 +105,92 @@ def keypoint_filter(images_path, images_pickle):
     filter_match_img = cv2.drawMatches(images[0], kp0, images[1], kp1, matches_filter, None, flags=2)
     return matches,matches_filter, origin_match_img, filter_match_img
 
+def mask_count_match(pt0, pt1, masks0, masks1, m):
+    if m is None:
+        m = np.zeros((len(masks0), len(masks1)), np.int)
+    assert m.shape == (len(masks0), len(masks1))
+
+    x, y = pt0
+    pt1_in_boxes1_idx = None
+    height,width,channel=masks0.shape
+
+    for idx in range(channel):
+        if masks0[y,x,idx]==1:
+            pt1_in_boxes1_idx = idx
+            break
+
+    x, y = pt1
+    pt2_in_boxes2_idx = None
+    height, width, channel = masks1.shape
+    for idx in range(channel):
+        if masks1[y,x,idx]==1:
+            pt1_in_boxes1_idx = idx
+            break
+
+    if pt1_in_boxes1_idx is not None and pt2_in_boxes2_idx is not None:
+        m[pt1_in_boxes1_idx, pt2_in_boxes2_idx] += 1
+
+    return m,pt1_in_boxes1_idx,pt2_in_boxes2_idx
+
+def draw_mask_image(image_path,result):
+    masks=result['masks']
+    height,width,N=masks.shape
+    colors =visualize.random_colors(N)
+
+    image=cv2.imread(image_path,cv2.IMREAD_COLOR)
+
+    masked_image=image.astype(np.uint32).copy()
+    for i in range(N):
+        mask = masks[:, :, i]
+        masked_image = visualize.apply_mask(masked_image, mask, colors[i],alpha=1)
+
+    return masked_image.astype(np.uint8)
+
+
+def keypoint_mask_filter(images_path, images_pickle):
+    images = []
+    for image_path in images_path:
+        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        images.append(image)
+
+    kp0, kp1, matches = orb_match(images[0], images[1])
+
+    masks = []
+
+    idx=0
+    mask_images=[]
+    for image_pickle in images_pickle:
+        r = load_pickle(image_pickle)[0][0]
+        masks.append(r['masks'])
+        mask_image=draw_mask_image(images_path[idx],r)
+        mask_images.append(mask_image)
+        idx+=1
+
+    m = None
+    match_boxes = []
+    for match in matches:
+        pt0 = kp0[match.queryIdx].pt
+        pt1 = kp1[match.trainIdx].pt
+        m, bb0_idx, bb1_idx = mask_count_match(pt0, pt1, masks[0], masks[1], m)
+        match_boxes.append((bb0_idx, bb1_idx))
+    print(m)
+
+    # start filter
+    max_count_m = np.argmax(m, 1)
+    matches_filter = []
+    for i, match in enumerate(matches):
+        bb0_idx, bb1_idx = match_boxes[i]
+        if bb0_idx is None or bb1_idx is None:
+            pass
+        elif bb1_idx != max_count_m[bb0_idx]:
+            pass
+        else:
+            matches_filter.append(match)
+
+    origin_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches, None, flags=2)
+    filter_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches_filter, None, flags=2)
+    return matches, matches_filter, origin_match_img, filter_match_img
+
 
 if __name__ == '__main__':
     image0_pickle_dir = '/home/yzbx/image_0'
@@ -108,7 +209,10 @@ if __name__ == '__main__':
 
         print(image0_path, image1_path, pkl0_path, pkl1_path)
 
-        matches,filter_matches, origin_img, filter_img = keypoint_filter((image0_path, image1_path), (pkl0_path, pkl1_path))
+        # matches,filter_matches, origin_img, filter_img = keypoint_bbox_filter((image0_path, image1_path),
+        #                                                                       (pkl0_path, pkl1_path))
+        matches, filter_matches, origin_img, filter_img = keypoint_mask_filter((image0_path, image1_path),
+                                                                               (pkl0_path, pkl1_path))
         print('good match number', len(filter_matches))
         print('bad match number', len(matches) - len(filter_matches))
         # cv2.imshow('origin image match', origin_img)
@@ -118,8 +222,8 @@ if __name__ == '__main__':
         # if key == 'q':
         #     break
 
-        plt.subplot(121)
+        plt.subplot(211)
         plt.imshow(origin_img)
-        plt.subplot(122)
+        plt.subplot(212)
         plt.imshow(filter_img)
         plt.show(block=True)
