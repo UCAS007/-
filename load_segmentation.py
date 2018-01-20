@@ -1,6 +1,7 @@
 import pickle
 import cv2
 import os
+import numpy as np
 
 ROOT_Image_DIR='/home/yzbx/Pictures/07'
 ROOT_Segmentation_DIR='/home/yzbx/Pictures/output'
