@@ -115,7 +115,7 @@ def mask_count_match(pt0, pt1, masks0, masks1, m):
     height,width,channel=masks0.shape
 
     for idx in range(channel):
-        if masks0[y,x,idx]==1:
+        if masks0[int(y),int(x),idx]==1:
             pt1_in_boxes1_idx = idx
             break
 
@@ -123,7 +123,7 @@ def mask_count_match(pt0, pt1, masks0, masks1, m):
     pt2_in_boxes2_idx = None
     height, width, channel = masks1.shape
     for idx in range(channel):
-        if masks1[y,x,idx]==1:
+        if masks1[int(y),int(x),idx]==1:
             pt1_in_boxes1_idx = idx
             break
 
@@ -151,8 +151,12 @@ def keypoint_mask_filter(images_path, images_pickle):
     images = []
     for image_path in images_path:
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            print('bad image path',image_path)
         images.append(image)
 
+    print('image[0] shape is',images[0].shape)
+    print('image[1] shape is', images[1].shape)
     kp0, kp1, matches = orb_match(images[0], images[1])
 
     masks = []
@@ -193,21 +197,27 @@ def keypoint_mask_filter(images_path, images_pickle):
 
 
 if __name__ == '__main__':
-    image0_pickle_dir = '/home/yzbx/image_0'
-    image1_pickle_dir = '/home/yzbx/image_1'
-    image0_dir = '/home/yzbx/07/image_0'
-    image1_dir = '/home/yzbx/07/image_1'
+    image0_pickle_dir = '/home/yzbx/git/Match-MaskRCNN/data/pkl/image_0'
+    image1_pickle_dir = '/home/yzbx/git/Match-MaskRCNN/data/pkl/image_1'
+    image0_dir = '/home/yzbx/git/Match-MaskRCNN/data/image/image_0'
+    image1_dir = '/home/yzbx/git/Match-MaskRCNN/data/image/image_1'
 
-    for filename in os.listdir(image0_dir):
-        if not filename.endswith('png'):
+    image_format='jpg'
+    for filename0 in os.listdir(image0_dir):
+        if not filename0.endswith(image_format):
             continue
+        image0_path = os.path.join(image0_dir, filename0)
+        pkl0_path = os.path.join(image0_pickle_dir, filename0.replace(image_format, 'pkl'))
 
-        image0_path = os.path.join(image0_dir, filename)
-        image1_path = os.path.join(image1_dir, filename)
-        pkl0_path = os.path.join(image0_pickle_dir, filename.replace('png', 'pkl'))
-        pkl1_path = os.path.join(image1_pickle_dir, filename.replace('png', 'pkl'))
+        filename1=filename0.replace('L','R')
+        image1_path = os.path.join(image1_dir, filename1)
+        pkl1_path = os.path.join(image1_pickle_dir, filename1.replace(image_format, 'pkl'))
 
         print(image0_path, image1_path, pkl0_path, pkl1_path)
+        assert os.path.exists(image0_path)
+        assert os.path.exists(image1_path)
+        assert os.path.exists(pkl0_path)
+        assert os.path.exists(pkl1_path)
 
         # matches,filter_matches, origin_img, filter_img = keypoint_bbox_filter((image0_path, image1_path),
         #                                                                       (pkl0_path, pkl1_path))
