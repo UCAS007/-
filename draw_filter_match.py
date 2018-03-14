@@ -49,89 +49,6 @@ def orb_match(img1, img2):
 
     return kp1, kp2, matches
 
-
-def keypoint_bbox_filter(images_path, images_pickle):
-    images = []
-    for image_path in images_path:
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        images.append(image)
-
-    kp0, kp1, matches = orb_match(images[0], images[1])
-
-    segmentation_results = []
-    boxes0=[]
-    boxes1=[]
-    for i,image_pickle in enumerate(images_pickle):
-        segmentation_result = load_pickle(image_pickle)[0][0]
-        instance_number = len(segmentation_result['class_ids'])
-        for idx in range(instance_number):
-            box = segmentation_result['rois'][idx]
-            if i == 0:
-                boxes0.append(box)
-            elif i == 1:
-                boxes1.append(box)
-            else:
-                sys.exit(-1)
-
-        print(segmentation_result['class_ids'])
-        print(segmentation_result['masks'])
-        print(segmentation_result['scores'])
-        print(segmentation_result['rois'])
-
-        segmentation_results.append(segmentation_results)
-
-    m = None
-    match_boxes = []
-    for match in matches:
-        pt0 = kp0[match.queryIdx].pt
-        pt1 = kp1[match.trainIdx].pt
-        m, bb0_idx, bb1_idx = a.count_match(pt0, pt1, boxes0, boxes1, m)
-        match_boxes.append((bb0_idx, bb1_idx))
-    print(m)
-
-    # start filter
-    max_count_m = np.argmax(m, 1)
-    matches_filter = []
-    for i, match in enumerate(matches):
-        bb0_idx, bb1_idx = match_boxes[i]
-        if bb0_idx is None or bb1_idx is None:
-            pass
-        elif bb1_idx != max_count_m[bb0_idx]:
-            pass
-        else:
-            matches_filter.append(match)
-
-    origin_match_img = cv2.drawMatches(images[0], kp0, images[1], kp1, matches, None, flags=2)
-    filter_match_img = cv2.drawMatches(images[0], kp0, images[1], kp1, matches_filter, None, flags=2)
-    return matches,matches_filter, origin_match_img, filter_match_img
-
-def mask_count_match(pt0, pt1, masks0, masks1, m):
-    if m is None:
-        m = np.zeros((len(masks0), len(masks1)), np.int)
-    assert m.shape == (len(masks0), len(masks1))
-
-    x, y = pt0
-    pt1_in_boxes1_idx = None
-    height,width,channel=masks0.shape
-
-    for idx in range(channel):
-        if masks0[int(y),int(x),idx]==1:
-            pt1_in_boxes1_idx = idx
-            break
-
-    x, y = pt1
-    pt2_in_boxes2_idx = None
-    height, width, channel = masks1.shape
-    for idx in range(channel):
-        if masks1[int(y),int(x),idx]==1:
-            pt2_in_boxes2_idx = idx
-            break
-
-    if pt1_in_boxes1_idx is not None and pt2_in_boxes2_idx is not None:
-        m[pt1_in_boxes1_idx, pt2_in_boxes2_idx] += 1
-
-    return m,pt1_in_boxes1_idx,pt2_in_boxes2_idx
-
 def draw_mask_image(image_path,result):
     masks=result['masks']
     height,width,N=masks.shape
@@ -146,7 +63,23 @@ def draw_mask_image(image_path,result):
 
     return masked_image.astype(np.uint8)
 
+def check_match_people(pt0,pt1,masks0,masks1):
+    x, y = pt0
+    pt1_in_boxes1_idx = []
+    height,width,channel=masks0.shape
 
+    for idx in range(channel):
+        if masks0[int(y),int(x),idx]==1:
+            pt1_in_boxes1_idx.append(idx)
+
+    x, y = pt1
+    pt2_in_boxes2_idx = []
+    height, width, channel = masks1.shape
+    for idx in range(channel):
+        if masks1[int(y),int(x),idx]==1:
+            pt2_in_boxes2_idx.append(idx)
+    
+    return False
 def keypoint_mask_filter(images_path, images_pickle):
     images = []
     for image_path in images_path:
@@ -169,30 +102,21 @@ def keypoint_mask_filter(images_path, images_pickle):
         mask_image=draw_mask_image(images_path[idx],r)
         mask_images.append(mask_image)
         idx+=1
-
-    m = None
-    match_boxes = []
+    
+    matches_filter=[]
     for match in matches:
         pt0 = kp0[match.queryIdx].pt
         pt1 = kp1[match.trainIdx].pt
-        m, bb0_idx, bb1_idx = mask_count_match(pt0, pt1, masks[0], masks[1], m)
-        match_boxes.append((bb0_idx, bb1_idx))
-    print(m)
-
-    # start filter
-    max_count_m = np.argmax(m, 1)
-    matches_filter = []
-    for i, match in enumerate(matches):
-        bb0_idx, bb1_idx = match_boxes[i]
-        if bb0_idx is None or bb1_idx is None:
-            pass
-        elif bb1_idx != max_count_m[bb0_idx]:
-            pass
-        else:
+        match_people = check_match_people(pt0, pt1, masks[0], masks[1])
+        if match_people:
             matches_filter.append(match)
 
-    origin_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches, None, flags=2)
-    filter_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches_filter, None, flags=2)
+            
+    print('len of matches',len(matches))
+    print('len of filtered matches',len(matches_filter))
+    
+    origin_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches, None, flags=0)
+    filter_match_img = cv2.drawMatches(mask_images[0], kp0, mask_images[1], kp1, matches, None, flags=0)
     return matches, matches_filter, origin_match_img, filter_match_img
 
 
